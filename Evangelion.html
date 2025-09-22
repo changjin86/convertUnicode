@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Unicode Space Cleaner</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin:0; font:16px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans"; }
+  header { padding:12px 16px; border-bottom:1px solid #ddd; }
+  h1 { margin:0 0 6px; font-size:1.1rem; }
+  p { margin:0; font-size:.92rem; opacity:.8 }
+  main { display:grid; gap:10px; grid-template-columns:1fr 1fr; height:calc(100vh - 74px); padding:10px; }
+  @media (max-width: 920px){ main { grid-template-columns:1fr; height:auto; } }
+  .col { display:flex; flex-direction:column; min-height:260px; }
+  label { font-size:.9rem; opacity:.8; margin:6px 0; }
+  textarea {
+    flex:1 1 auto; width:100%; resize:vertical; min-height:260px;
+    font:14px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    padding:12px; border:1px solid #ccc; border-radius:10px; background:transparent;
+  }
+  footer { padding:8px 16px; border-top:1px solid #ddd; font-size:.85rem; opacity:.8 }
+  .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Unicode Space Cleaner</h1>
+    
+  </header>
+
+  <main>
+    <section class="col">
+      <label for="in">Input (paste here)</label>
+      <textarea id="in" placeholder="Paste your text here…"></textarea>
+    </section>
+    <section class="col">
+      <label for="out">Cleaned output (auto)</label>
+      <textarea id="out" placeholder="Cleaned text appears here…" readonly></textarea>
+    </section>
+  </main>
+
+  <footer>
+    Replaces: <span class="mono">U+202F, U+00A0, U+2009–U+200A, U+2002–U+2006, U+2007–U+2008, U+2003, U+2004–U+2006, U+2011, U+FEFF</span> → SPACE; removes <span class="mono">U+200B, U+2060, U+200C, U+200D, U+00AD</span>.
+  </footer>
+
+<script>
+/*
+  Minimal, automatic cleaner:
+  - Converts many non-standard/breaking spaces to normal U+0020 space
+  - Deletes zero-width & soft hyphen characters
+  - Normalizes to NFC for consistency (safe for Google Docs)
+*/
+
+const input = document.getElementById('in');
+const output = document.getElementById('out');
+
+function cleanText(t) {
+  if (!t) return "";
+
+  // 1) Normalize (compose)
+  try { t = t.normalize('NFC'); } catch {}
+
+  // 2) Replace odd visible-ish spaces with normal space
+  //    Includes: NBSP, NNBSP, thin/hair/figure, en/em, 3/4/6-per-em, punctuation space, etc.
+  const toSpace = [
+    0x00A0, // NBSP
+    0x202F, // NNBSP
+    0x2009, // THIN SPACE
+    0x200A, // HAIR SPACE
+    0x2002, // EN SPACE
+    0x2003, // EM SPACE
+    0x2004, // THREE-PER-EM
+    0x2005, // FOUR-PER-EM
+    0x2006, // SIX-PER-EM
+    0x2007, // FIGURE SPACE
+    0x2008, // PUNCTUATION SPACE
+    0x205F, // MEDIUM MATHEMATICAL SPACE
+    0x1680, // OGHAM SPACE MARK
+    0x180E, // MONGOLIAN VOWEL SEPARATOR (deprecated but seen)
+    0x2028, // LINE SEPARATOR (keep as space so paragraphs hold when pasted inline)
+    0x2029, // PARAGRAPH SEPARATOR (same)
+    0x2011, // NON-BREAKING HYPHEN → treat like normal hyphen by mapping to space and letting docs wrap
+    0xFEFF  // ZERO WIDTH NO-BREAK SPACE (BOM) → space (prevents sticking)
+  ];
+  // Build a regex class of those code points
+  const toSpaceRe = new RegExp("[" + toSpace.map(cp => "\\u" + cp.toString(16).padStart(4, "0")).join("") + "]", "g");
+  t = t.replace(toSpaceRe, " ");
+
+  // 3) Remove zero-width and control decorations that cause paste issues
+  const removeList = [
+    0x200B, // ZERO WIDTH SPACE
+    0x2060, // WORD JOINER
+    0x200C, // ZWNJ
+    0x200D, // ZWJ
+    0x00AD  // SOFT HYPHEN
+  ];
+  const removeRe = new RegExp("[" + removeList.map(cp => "\\u" + cp.toString(16).padStart(4, "0")).join("") + "]", "g");
+  t = t.replace(removeRe, "");
+
+  // 4) Collapse runs of whitespace to a single space, but keep line breaks
+  //    - First, protect line breaks
+  t = t.replace(/\r\n/g, "\n");
+  t = t.replace(/[ \t\f\v\u000B]+/g, " ");     // collapse horizontal whitespace
+  // 5) Trim trailing spaces on each line
+  t = t.replace(/[ \t]+$/gm, "");
+  // 6) Optional: condense 3+ blank lines down to max 2
+  t = t.replace(/\n{3,}/g, "\n\n");
+
+  return t;
+}
+
+function update() {
+  output.value = cleanText(input.value);
+}
+
+// Auto-update as you type/paste
+input.addEventListener('input', update);
+// Run once in case the browser autofills something
+update();
+</script>
+</body>
+</html>
